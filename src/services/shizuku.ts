@@ -136,16 +136,25 @@ export const openExternalUrl = async (url: string): Promise<boolean> => {
   if (!url || !url.trim()) return false;
   const cleanUrl = url.trim();
 
+  // 1. In native Android Capacitor environment, use native plugin intent
   if (isNativeAndroid()) {
     try {
       await ShizukuNative.openUrl({ url: cleanUrl });
       return true;
     } catch (e) {
-      console.warn('Native openUrl failed, falling back to browser navigation:', e);
+      console.warn('Native openUrl failed, attempting web view bridges:', e);
     }
   }
 
-  // Web Browser fallback
+  // 2. Try window.open with '_system' (standard Capacitor/Cordova hook to launch external app)
+  try {
+    const win = window.open(cleanUrl, '_system');
+    if (win) return true;
+  } catch (err) {
+    console.warn('window.open _system failed:', err);
+  }
+
+  // 3. Anchor click fallback
   try {
     const a = document.createElement('a');
     a.href = cleanUrl;
@@ -156,12 +165,15 @@ export const openExternalUrl = async (url: string): Promise<boolean> => {
     document.body.removeChild(a);
     return true;
   } catch (err) {
-    console.warn('Failed to open external url:', err);
-    try {
-      window.location.href = cleanUrl;
-      return true;
-    } catch {
-      return false;
-    }
+    console.warn('Anchor click failed:', err);
+  }
+
+  // 4. Final browser location assignment
+  try {
+    window.location.href = cleanUrl;
+    return true;
+  } catch (err) {
+    console.warn('window.location.href failed:', err);
+    return false;
   }
 };

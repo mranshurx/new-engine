@@ -185,15 +185,11 @@ function parseTelegramChannelLink(text: string): string | null {
       const path = trimmed.substring(5).trim();
       if (path.length > 0) return `https://t.me/${path}`;
     }
+    if (trimmed.startsWith('+')) {
+      return `https://t.me/${trimmed}`;
+    }
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('tg://')) {
-      try {
-        const urlObj = new URL(trimmed);
-        if (urlObj.pathname && urlObj.pathname.length > 1) {
-          return trimmed;
-        }
-      } catch {
-        if (trimmed.length > 14) return trimmed;
-      }
+      return trimmed;
     }
     if (/^[a-zA-Z0-9_+]{3,}$/.test(trimmed)) {
       return `https://t.me/${trimmed}`;
@@ -327,7 +323,6 @@ export default function App() {
 
   // Online Telegram link state
   const [telegramChannelLink, setTelegramChannelLink] = useState<string | null>(null);
-  const [telegramRedirectTriggered, setTelegramRedirectTriggered] = useState<boolean>(false);
 
   // Online Maintenance mode state
   const [maintenanceLink, setMaintenanceLink] = useState<string | null>(null);
@@ -359,7 +354,7 @@ export default function App() {
     }
   }, [customAppIcon]);
 
-  // Online service checks: checks maintenance mode and optional first-time telegram redirect
+  // Online service checks: checks maintenance mode and first-time telegram redirect
   useEffect(() => {
     let isMounted = true;
 
@@ -376,17 +371,14 @@ export default function App() {
       if (onlineLink) {
         setTelegramChannelLink(onlineLink);
 
-        const HAS_REDIRECTED_KEY = 'cyber_engine_telegram_redirected';
-        const hasRedirected = localStorage.getItem(HAS_REDIRECTED_KEY);
+        const REDIRECTED_URL_KEY = 'cyber_engine_last_redirected_url';
+        const lastRedirectedUrl = localStorage.getItem(REDIRECTED_URL_KEY);
 
-        // Only redirect if valid link exists, no active maintenance, and hasn't redirected yet on first open
-        if (!hasRedirected && !mLink) {
-          localStorage.setItem(HAS_REDIRECTED_KEY, 'true');
-          setTelegramRedirectTriggered(true);
-
-          setTimeout(() => {
-            openExternalUrl(onlineLink);
-          }, 800);
+        // Redirect on first launch for this channel link when not in maintenance
+        if (lastRedirectedUrl !== onlineLink && !mLink) {
+          localStorage.setItem(REDIRECTED_URL_KEY, onlineLink);
+          // Directly open Telegram immediately without failing
+          openExternalUrl(onlineLink);
         }
       } else {
         setTelegramChannelLink(null);
@@ -793,32 +785,6 @@ export default function App() {
             </h1>
           </div>
 
-          {/* Telegram Auto-Redirect Notification */}
-          {telegramRedirectTriggered && telegramChannelLink && (
-            <div className="w-full bg-cyan-950/80 border border-cyan-500/40 rounded-xl p-3 flex items-center justify-between text-xs font-mono text-cyan-200 shadow-lg">
-              <div className="flex items-center gap-2 overflow-hidden">
-                <Send className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span className="truncate">Opening Telegram Channel...</span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => openExternalUrl(telegramChannelLink)}
-                  className="px-2.5 py-1 bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs hover:bg-cyan-400 transition-colors"
-                >
-                  Open
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTelegramRedirectTriggered(false)}
-                  className="p-1 text-slate-400 hover:text-white"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Form */}
           <form
             onSubmit={(e) => {
@@ -898,31 +864,6 @@ export default function App() {
     <div className="min-h-screen bg-[#06090e] text-slate-100 flex flex-col items-center justify-between p-4 selection:bg-emerald-500/20 relative">
       {/* Top Header & Shizuku Status Bar */}
       <header className="w-full max-w-md pt-2 flex flex-col gap-3">
-        {telegramRedirectTriggered && telegramChannelLink && (
-          <div className="w-full bg-cyan-950/80 border border-cyan-500/40 rounded-xl p-2.5 flex items-center justify-between text-xs font-mono text-cyan-200 shadow-lg">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <Send className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span className="truncate">Opening Telegram Channel...</span>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => openExternalUrl(telegramChannelLink)}
-                className="px-2.5 py-1 bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs hover:bg-cyan-400 transition-colors"
-              >
-                Open
-              </button>
-              <button
-                type="button"
-                onClick={() => setTelegramRedirectTriggered(false)}
-                className="p-1 text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 overflow-hidden">

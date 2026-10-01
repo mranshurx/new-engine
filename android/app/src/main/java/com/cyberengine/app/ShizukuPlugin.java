@@ -415,16 +415,63 @@ public class ShizukuPlugin extends Plugin {
             return;
         }
 
+        String url = urlString.trim();
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+
+        // 1. Try direct ACTION_VIEW Intent
         try {
-            Uri uri = Uri.parse(urlString.trim());
+            Uri uri = Uri.parse(url);
             Intent intent = new Intent(Intent.ACTION_VIEW, uri);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(intent);
+            ctx.startActivity(intent);
+
+            JSObject ret = new JSObject();
+            ret.put("opened", true);
+            call.resolve(ret);
+            return;
+        } catch (Throwable t) {
+            Log.w(TAG, "Direct Intent.ACTION_VIEW failed: " + t.getMessage());
+        }
+
+        // 2. If it's a telegram link, try tg:// URI scheme directly for Telegram app
+        try {
+            Intent tgIntent = null;
+            if (url.contains("t.me/+")) {
+                String invite = url.substring(url.indexOf("t.me/+") + 6);
+                tgIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("tg://join?invite=" + invite));
+            } else if (url.contains("t.me/joinchat/")) {
+                String invite = url.substring(url.indexOf("t.me/joinchat/") + 14);
+                tgIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("tg://join?invite=" + invite));
+            } else if (url.contains("t.me/")) {
+                String domain = url.substring(url.indexOf("t.me/") + 5);
+                tgIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=" + domain));
+            }
+
+            if (tgIntent != null) {
+                tgIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(tgIntent);
+
+                JSObject ret = new JSObject();
+                ret.put("opened", true);
+                call.resolve(ret);
+                return;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Telegram scheme intent failed: " + t.getMessage());
+        }
+
+        // 3. Fallback: Browser explicit category
+        try {
+            Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            browserIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+            browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(browserIntent);
+
             JSObject ret = new JSObject();
             ret.put("opened", true);
             call.resolve(ret);
         } catch (Throwable t) {
-            Log.w(TAG, "openUrl error: " + t.getMessage());
+            Log.e(TAG, "All openUrl attempts failed: " + t.getMessage());
             call.reject("Failed to open URL: " + t.getMessage());
         }
     }
