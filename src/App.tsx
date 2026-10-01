@@ -154,6 +154,9 @@ const telegramFilesGlob = import.meta.glob(
 const ONLINE_TELEGRAM_LINK_URL =
   'https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-link.txt';
 
+const ONLINE_MAINTENANCE_LINK_URL =
+  'https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt';
+
 // Helper to parse telegram link from raw text
 function parseTelegramChannelLink(text: string): string | null {
   if (!text) return null;
@@ -265,6 +268,59 @@ async function fetchOnlineTelegramLink(): Promise<string | null> {
   return null;
 }
 
+// Fetch online Maintenance channel link live from GitHub repo
+async function fetchOnlineMaintenanceLink(): Promise<string | null> {
+  const timestamp = Date.now();
+  const randomSalt = Math.floor(Math.random() * 1000000);
+
+  // 1. Direct raw GitHub URL from src/telegram-redirect/channel-link.txt
+  try {
+    const res = await fetch(
+      `${ONLINE_MAINTENANCE_LINK_URL}?_t=${timestamp}_${randomSalt}`,
+      { cache: 'no-store' }
+    );
+    if (res.ok) {
+      const text = await res.text();
+      const parsed = parseTelegramChannelLink(text);
+      if (parsed) return parsed;
+    }
+  } catch (err) {
+    console.warn('Primary maintenance check failed:', err);
+  }
+
+  // 2. Direct branch raw URL
+  try {
+    const res = await fetch(
+      `https://raw.githubusercontent.com/mranshurx/new-engine/main/src/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+      { cache: 'no-store' }
+    );
+    if (res.ok) {
+      const text = await res.text();
+      const parsed = parseTelegramChannelLink(text);
+      if (parsed) return parsed;
+    }
+  } catch (err) {
+    console.warn('Secondary maintenance check failed:', err);
+  }
+
+  // 3. Fallback: jsDelivr CDN
+  try {
+    const res = await fetch(
+      `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/src/telegram-redirect/channel-link.txt?_t=${timestamp}`,
+      { cache: 'no-store' }
+    );
+    if (res.ok) {
+      const text = await res.text();
+      const parsed = parseTelegramChannelLink(text);
+      if (parsed) return parsed;
+    }
+  } catch (err) {
+    console.warn('CDN maintenance check failed:', err);
+  }
+
+  return null;
+}
+
 export default function App() {
   // Custom Icon
   const customAppIcon = getCustomAppIcon();
@@ -272,6 +328,23 @@ export default function App() {
   // Online Telegram link state
   const [telegramChannelLink, setTelegramChannelLink] = useState<string | null>(null);
   const [telegramRedirectTriggered, setTelegramRedirectTriggered] = useState<boolean>(false);
+
+  // Online Maintenance mode state
+  const [maintenanceLink, setMaintenanceLink] = useState<string | null>(null);
+  const [isCheckingMaintenance, setIsCheckingMaintenance] = useState<boolean>(false);
+
+  // Function to re-check maintenance mode
+  const refreshMaintenanceStatus = useCallback(async () => {
+    setIsCheckingMaintenance(true);
+    try {
+      const mLink = await fetchOnlineMaintenanceLink();
+      setMaintenanceLink(mLink);
+    } catch {
+      // Ignore
+    } finally {
+      setIsCheckingMaintenance(false);
+    }
+  }, []);
 
   // Sync browser favicon if custom app icon exists
   useEffect(() => {
@@ -286,11 +359,17 @@ export default function App() {
     }
   }, [customAppIcon]);
 
-  // First time Telegram redirect on app opening: checks online from GitHub
+  // Online service checks: checks maintenance mode and optional first-time telegram redirect
   useEffect(() => {
     let isMounted = true;
 
-    async function checkOnlineAndRedirect() {
+    async function checkOnlineServices() {
+      // 1. Check Maintenance mode first
+      const mLink = await fetchOnlineMaintenanceLink();
+      if (!isMounted) return;
+      setMaintenanceLink(mLink);
+
+      // 2. Check general Telegram redirect
       const onlineLink = await fetchOnlineTelegramLink();
       if (!isMounted) return;
 
@@ -300,8 +379,8 @@ export default function App() {
         const HAS_REDIRECTED_KEY = 'cyber_engine_telegram_redirected';
         const hasRedirected = localStorage.getItem(HAS_REDIRECTED_KEY);
 
-        // Only redirect if valid link exists AND hasn't redirected yet on first open
-        if (!hasRedirected) {
+        // Only redirect if valid link exists, no active maintenance, and hasn't redirected yet on first open
+        if (!hasRedirected && !mLink) {
           localStorage.setItem(HAS_REDIRECTED_KEY, 'true');
           setTelegramRedirectTriggered(true);
 
@@ -314,10 +393,18 @@ export default function App() {
       }
     }
 
-    checkOnlineAndRedirect();
+    checkOnlineServices();
+
+    // Re-check maintenance status periodically every 30 seconds
+    const interval = setInterval(() => {
+      fetchOnlineMaintenanceLink().then((mLink) => {
+        if (isMounted) setMaintenanceLink(mLink);
+      });
+    }, 30000);
 
     return () => {
       isMounted = false;
+      clearInterval(interval);
     };
   }, []);
 
@@ -621,6 +708,59 @@ export default function App() {
       setStatusMessage(msg);
     }
   };
+
+  // MAINTENANCE SCREEN: Triggered when any link is put in src/telegram-redirect/channel-link.txt
+  if (maintenanceLink) {
+    return (
+      <div className="min-h-screen bg-[#06090e] text-slate-100 flex flex-col items-center justify-center p-5 selection:bg-rose-500/20">
+        <div className="w-full max-w-sm flex flex-col items-center text-center gap-6">
+          {/* Logo / Warning Badge */}
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-rose-600 via-amber-500 to-orange-400 p-[1.5px] shadow-2xl shadow-rose-950/60 flex items-center justify-center">
+            <div className="w-full h-full bg-slate-950 rounded-[15px] flex items-center justify-center text-amber-400">
+              <AlertCircle className="w-8 h-8 text-amber-400 animate-pulse" />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            <span className="text-[10px] font-mono tracking-widest text-amber-400 bg-amber-950/50 border border-amber-500/30 px-3 py-1 rounded-full uppercase font-bold self-center">
+              SYSTEM MAINTENANCE
+            </span>
+            <h1 className="font-['Cabinet_Grotesk'] text-xl font-black tracking-tight text-white uppercase leading-snug">
+              PROXY UNDER MAINTAINACE CHECK TELEGRAM FOR UPDATE
+            </h1>
+            <p className="text-xs text-slate-400 font-mono">
+              The service is currently undergoing routine maintenance. Please visit our official Telegram channel for status updates and announcements.
+            </p>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="w-full flex flex-col gap-3">
+            <button
+              onClick={() => openExternalUrl(maintenanceLink)}
+              className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-slate-950 font-['Cabinet_Grotesk'] font-bold rounded-xl shadow-lg shadow-amber-950/50 hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
+            >
+              <Send className="w-4 h-4 text-slate-950" />
+              <span>Open Telegram Channel</span>
+              <ExternalLink className="w-3.5 h-3.5 text-slate-950/80" />
+            </button>
+
+            <button
+              onClick={() => refreshMaintenanceStatus()}
+              disabled={isCheckingMaintenance}
+              className="w-full py-2.5 px-3 bg-slate-900 border border-slate-800 text-slate-300 font-mono text-xs rounded-xl hover:text-white hover:border-slate-700 transition-colors flex items-center justify-center gap-2"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingMaintenance ? 'animate-spin text-amber-400' : ''}`} />
+              <span>{isCheckingMaintenance ? 'Checking status...' : 'Check Again'}</span>
+            </button>
+          </div>
+
+          <div className="text-[10px] font-mono text-slate-500">
+            CYBER-ENGINE CLOUD SAFEGUARD
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Initial loading state
   if (!isInitialCheckDone) {
