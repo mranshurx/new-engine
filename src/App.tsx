@@ -511,12 +511,10 @@ export default function App() {
         setAuthError(null);
         setTimeout(() => refreshShizuku(), 100);
       } else {
-        // If the key was changed on GitHub and is no longer valid, clear local storage
+        // If the key was changed and is no longer valid, clear local storage
         localStorage.removeItem('cyber_engine_auth_key');
         setIsAuthenticated(false);
-        setAuthError(
-          'Access Denied: Invalid key. If you just updated key.txt on GitHub, please enter the new key.'
-        );
+        setAuthError('Invalid key.');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -793,10 +791,6 @@ export default function App() {
             <h1 className="font-['Cabinet_Grotesk'] text-2xl font-bold tracking-tight text-white mt-1">
               CYBER-ENGINE
             </h1>
-            <p className="text-xs text-slate-400 font-mono flex items-center gap-1.5 justify-center">
-              <Globe className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-              <span>Online GitHub Authorization</span>
-            </p>
           </div>
 
           {/* Telegram Auto-Redirect Notification */}
@@ -880,7 +874,7 @@ export default function App() {
               {isVerifying ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
-                  <span>CHECKING GITHUB ONLINE...</span>
+                  <span>VERIFYING KEY...</span>
                 </>
               ) : (
                 <>
