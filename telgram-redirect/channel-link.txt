@@ -1,7 +1,1 @@
-# Paste your Telegram channel link or username below:
-# Examples:
-#   https://t.me/your_channel_name
-#   https://t.me/+your_invite_hash
-#   @your_channel_name
-
 https://t.me/
