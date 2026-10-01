@@ -36,7 +36,7 @@ async function syncIcons() {
   const foundIcon = findIconImage();
   if (!foundIcon) {
     console.log('[Icon Sync] No custom icon image found. Using default assets.');
-    process.exit(0);
+    return;
   }
 
   console.log(`[Icon Sync] Found custom icon: ${foundIcon}`);
@@ -49,7 +49,7 @@ async function syncIcons() {
     console.warn('[Icon Sync] sharp not available, will use direct copy if PNG:', err.message);
   }
 
-  // Target directories for mipmap icons
+  // Target densities for launcher icons
   const androidMipmaps = [
     { dir: 'android/app/src/main/res/mipmap-mdpi', iconSize: 48, fgSize: 108 },
     { dir: 'android/app/src/main/res/mipmap-hdpi', iconSize: 72, fgSize: 162 },
@@ -58,9 +58,10 @@ async function syncIcons() {
     { dir: 'android/app/src/main/res/mipmap-xxxhdpi', iconSize: 192, fgSize: 432 },
   ];
 
-  // Target directories for splash screens
-  const splashDrawables = [
-    'android/app/src/main/res/drawable',
+  const ext = path.extname(foundIcon).toLowerCase();
+
+  // Clean up legacy duplicate splash folders that bloated APK by 25+ MB
+  const legacySplashDirs = [
     'android/app/src/main/res/drawable-port-mdpi',
     'android/app/src/main/res/drawable-port-hdpi',
     'android/app/src/main/res/drawable-port-xhdpi',
@@ -73,68 +74,72 @@ async function syncIcons() {
     'android/app/src/main/res/drawable-land-xxxhdpi',
   ];
 
-  const ext = path.extname(foundIcon).toLowerCase();
+  for (const relDir of legacySplashDirs) {
+    const fullDir = path.join(rootDir, relDir);
+    if (fs.existsSync(fullDir)) {
+      try {
+        fs.rmSync(fullDir, { recursive: true, force: true });
+      } catch {
+        // ignore
+      }
+    }
+  }
 
-  // If sharp is available, convert any format (PNG, JPG, WEBP, SVG) to high-quality PNGs
+  // If sharp is available, convert any format (PNG, JPG, WEBP, SVG) to high-quality compressed PNGs
   if (sharp) {
     try {
       const inputBuffer = fs.readFileSync(foundIcon);
 
-      // 1. Render input once to a crisp master PNG buffer (1024x1024)
-      const masterBuffer = await sharp(inputBuffer)
-        .resize(1024, 1024, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-        .png()
-        .toBuffer();
-
-      // 2. Render splash master once (1024x1024 with app theme background)
+      // 1. High-efficiency splash buffer (512x512 with palette quantization: ~100KB instead of 2.4MB)
       const splashBuffer = await sharp(inputBuffer)
-        .resize(1024, 1024, { fit: 'contain', background: { r: 6, g: 9, b: 14, alpha: 1 } })
-        .png()
+        .resize(512, 512, { fit: 'contain', background: { r: 6, g: 9, b: 14, alpha: 1 } })
+        .png({ compressionLevel: 9, palette: true })
         .toBuffer();
 
-      // 3. Replace ic_launcher.png, ic_launcher_round.png, ic_launcher_foreground.png in all mipmaps
+      const drawableDir = path.join(rootDir, 'android/app/src/main/res/drawable');
+      if (!fs.existsSync(drawableDir)) fs.mkdirSync(drawableDir, { recursive: true });
+      fs.writeFileSync(path.join(drawableDir, 'splash.png'), splashBuffer);
+      console.log(`[Icon Sync] Updated compressed splash.png (${Math.round(splashBuffer.length / 1024)} KB)`);
+
+      // 2. High-efficiency launcher icons with density scaling and palette quantization
       for (const target of androidMipmaps) {
         const fullDir = path.join(rootDir, target.dir);
         if (!fs.existsSync(fullDir)) fs.mkdirSync(fullDir, { recursive: true });
 
-        const iconBuf = await sharp(masterBuffer)
-          .resize(target.iconSize, target.iconSize)
-          .png()
+        const iconBuf = await sharp(inputBuffer)
+          .resize(target.iconSize, target.iconSize, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          })
+          .png({ compressionLevel: 9, palette: true })
           .toBuffer();
 
-        const fgBuf = await sharp(masterBuffer)
-          .resize(target.fgSize, target.fgSize)
-          .png()
+        const fgBuf = await sharp(inputBuffer)
+          .resize(target.fgSize, target.fgSize, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          })
+          .png({ compressionLevel: 9, palette: true })
           .toBuffer();
 
         fs.writeFileSync(path.join(fullDir, 'ic_launcher.png'), iconBuf);
         fs.writeFileSync(path.join(fullDir, 'ic_launcher_round.png'), iconBuf);
         fs.writeFileSync(path.join(fullDir, 'ic_launcher_foreground.png'), fgBuf);
-        console.log(`[Icon Sync] Updated ic_launcher, ic_launcher_round, ic_launcher_foreground in ${target.dir}`);
+        console.log(`[Icon Sync] Updated optimized icons in ${target.dir}`);
       }
 
-      // 4. Replace splash.png in all drawable directories
-      for (const relDir of splashDrawables) {
-        const fullDir = path.join(rootDir, relDir);
-        if (!fs.existsSync(fullDir)) fs.mkdirSync(fullDir, { recursive: true });
-
-        fs.writeFileSync(path.join(fullDir, 'splash.png'), splashBuffer);
-        console.log(`[Icon Sync] Updated splash.png in ${relDir}`);
-      }
-
-      // 5. Remove old vector foreground XML if present so Android prioritizes custom PNG
+      // 3. Remove old vector foreground XML if present so Android prioritizes custom PNG
       const vectorForeground = path.join(rootDir, 'android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml');
       if (fs.existsSync(vectorForeground)) {
         try {
           fs.unlinkSync(vectorForeground);
-          console.log('[Icon Sync] Removed old drawable-v24/ic_launcher_foreground.xml to prioritize custom icon');
-        } catch (e) {
+        } catch {
           // ignore
         }
       }
 
-      console.log('[Icon Sync] SUCCESS: Replaced ic_launcher.png, ic_launcher_round.png, ic_launcher_foreground.png, and splash.png across all Android resource folders.');
-      process.exit(0);
+      console.log('[Icon Sync] SUCCESS: Replaced ic_launcher.png, ic_launcher_round.png, ic_launcher_foreground.png, and splash.png with size-optimized assets.');
+      return;
     } catch (err) {
       console.warn('[Icon Sync] sharp processing encountered error, attempting direct copy fallback:', err);
     }
@@ -151,14 +156,11 @@ async function syncIcons() {
       }
     }
 
-    for (const relDir of splashDrawables) {
-      const fullDir = path.join(rootDir, relDir);
-      if (fs.existsSync(fullDir)) {
-        fs.copyFileSync(foundIcon, path.join(fullDir, 'splash.png'));
-      }
+    const drawableDir = path.join(rootDir, 'android/app/src/main/res/drawable');
+    if (fs.existsSync(drawableDir)) {
+      fs.copyFileSync(foundIcon, path.join(drawableDir, 'splash.png'));
     }
-    console.log('[Icon Sync] Directly copied PNG to all launcher icons, foreground, and splash.');
-    process.exit(0);
+    console.log('[Icon Sync] Directly copied PNG to launcher icons, foreground, and splash.');
   }
 }
 
