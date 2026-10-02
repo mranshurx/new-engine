@@ -1,0 +1,80 @@
+/*
+==============================================================
+              COLD BYPASS V11 // DEMO BUILD
+==============================================================
+*/
+
+#include <iostream>
+#include <string>
+#include <vector>
+
+using namespace std;
+
+#define OWNER   "ARMAN BHAI"
+#define CONTACT "+917462010034"
+#define USER    "@MC_PANEL_OWNER"
+
+struct Feature {
+    string name;
+    string status;
+};
+
+int main() {
+
+    vector<Feature> features = {
+
+        {"NEW BYPASS ADDED",        "FIXED"},
+        {"BAN FIX",                 "ENABLED"},
+        {"ANTI-ISSUE BLOCK",        "ACTIVE"},
+        {"ALL PROBLEM BLOCK",       "ACTIVE"},
+        {"BLACKLIST BLOCK",         "ACTIVE"},
+        {"ERROR GUARD",             "ACTIVE"},
+        {"CRASH PROTECTION",        "READY"},
+        {"SESSION CHECK",           "ONLINE"},
+        {"SIGNATURE GUARD",         "SIMULATED"},
+        {"RUNTIME PROTECTION",      "ACTIVE"},
+        {"MEMORY CHECK",            "READY"},
+        {"CORE SECURITY",           "ONLINE"}
+    };
+
+    cout << "\n==============================================\n";
+    cout << "          COLD BYPASS V11 // DEMO\n";
+    cout << "==============================================\n\n";
+
+    for (const auto& f : features) {
+        cout << "[+] "
+             << f.name
+             << "  >>>  "
+             << f.status
+             << "\n";
+    }
+
+    cout << "\n----------------------------------------------\n";
+    cout << "[SYSTEM] NEW BYPASS ADDED\n";
+    cout << "[SYSTEM] BAN FIX ENABLED\n";
+    cout << "[SYSTEM] ANTI-ISSUE BLOCK ENABLED\n";
+    cout << "[SYSTEM] BLACKLIST BLOCK ENABLED\n";
+    cout << "[SYSTEM] ALL PROBLEM GUARD ACTIVE\n";
+    cout << "[SYSTEM] DEMO CORE READY\n";
+    cout << "----------------------------------------------\n";
+
+    cout << "\nOWNER   : " << OWNER << "\n";
+    cout << "CONTACT : " << CONTACT << "\n";
+    cout << "USER    : " << USER << "\n";
+
+    cout << "\n[+] COLD BYPASS DEMO READY\n";
+
+    return 0;
+}
+
+/*
+==============================================================
+OWNER CREDIT
+ARMAN BHAI
++917462010034
+@MC_PANEL_OWNER
+
+DEMO / VISUAL CODE ONLY
+No real anti-cheat or security bypass is implemented.
+==============================================================
+*/
