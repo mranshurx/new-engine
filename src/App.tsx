@@ -30,87 +30,103 @@ import {
   Send,
 } from 'lucide-react';
 
-const RAW_KEY_URL =
-  'https://raw.githubusercontent.com/mranshurx/CYBER-ENGINE-V2/refs/heads/main/key.txt';
+const PRIMARY_RAW_KEY_URL =
+  'https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/key.txt';
 
 // Helper to fetch live keys directly from GitHub online with simple CORS requests (no custom headers)
 async function fetchOnlineValidKeys(): Promise<string[]> {
   const cleanKeys = (text: string) =>
     text
-      .split(/[\r\n,]+/)
+      .replace(/^\uFEFF/, '')
+      .split(/[\r\n,;]+/)
       .map((k) => k.trim())
-      .filter(Boolean);
+      .filter((k) => k.length > 0);
 
   const timestamp = Date.now();
   const randomSalt = Math.floor(Math.random() * 1000000);
+  const collectedKeys = new Set<string>();
 
-  // 1. Primary: Direct raw GitHub URL (Simple GET request without custom headers to avoid CORS preflight 403)
+  // 1. Primary: Direct raw GitHub URL from active repo new-engine
   try {
     const rawRes = await fetch(
-      `https://raw.githubusercontent.com/mranshurx/CYBER-ENGINE-V2/refs/heads/main/key.txt?_t=${timestamp}_${randomSalt}`
+      `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/key.txt?_t=${timestamp}_${randomSalt}`
     );
 
     if (rawRes.ok) {
       const text = await rawRes.text();
-      const keys = cleanKeys(text);
-      if (keys.length > 0) return keys;
+      cleanKeys(text).forEach((k) => collectedKeys.add(k));
     }
   } catch (rawErr) {
-    console.warn('Primary raw key fetch failed:', rawErr);
+    console.warn('Primary new-engine raw key fetch failed:', rawErr);
   }
 
-  // 2. Secondary: Direct /main/ branch raw URL
+  // 2. Secondary: Direct /main/ branch raw URL from active repo new-engine
   try {
     const altRes = await fetch(
-      `https://raw.githubusercontent.com/mranshurx/CYBER-ENGINE-V2/main/key.txt?_t=${timestamp}_${randomSalt}`
+      `https://raw.githubusercontent.com/mranshurx/new-engine/main/key.txt?_t=${timestamp}_${randomSalt}`
     );
 
     if (altRes.ok) {
       const text = await altRes.text();
-      const keys = cleanKeys(text);
-      if (keys.length > 0) return keys;
+      cleanKeys(text).forEach((k) => collectedKeys.add(k));
     }
   } catch (altErr) {
-    console.warn('Secondary raw key fetch failed:', altErr);
+    console.warn('Secondary new-engine raw key fetch failed:', altErr);
   }
 
-  // 3. Fallback: Fast jsDelivr CDN
+  // 3. Fallback: Fast jsDelivr CDN from new-engine
   try {
     const cdnRes = await fetch(
-      `https://cdn.jsdelivr.net/gh/mranshurx/CYBER-ENGINE-V2@main/key.txt?_t=${timestamp}`
+      `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/key.txt?_t=${timestamp}`
     );
 
     if (cdnRes.ok) {
       const text = await cdnRes.text();
-      const keys = cleanKeys(text);
-      if (keys.length > 0) return keys;
+      cleanKeys(text).forEach((k) => collectedKeys.add(k));
     }
   } catch (cdnErr) {
-    console.warn('jsDelivr key fetch failed:', cdnErr);
+    console.warn('jsDelivr new-engine key fetch failed:', cdnErr);
   }
 
-  // 4. Fallback: GitHub REST API
+  // 4. Fallback: GitHub REST API for new-engine
   try {
     const apiRes = await fetch(
-      `https://api.github.com/repos/mranshurx/CYBER-ENGINE-V2/contents/key.txt?ref=main&_t=${timestamp}`
+      `https://api.github.com/repos/mranshurx/new-engine/contents/key.txt?ref=main&_t=${timestamp}`
     );
 
     if (apiRes.ok) {
       const data = await apiRes.json();
       if (data && data.content && data.encoding === 'base64') {
         const decoded = atob(data.content.replace(/\s/g, ''));
-        const keys = cleanKeys(decoded);
-        if (keys.length > 0) return keys;
+        cleanKeys(decoded).forEach((k) => collectedKeys.add(k));
       }
     }
   } catch (apiErr) {
-    console.warn('GitHub API key fetch failed:', apiErr);
+    console.warn('GitHub API new-engine key fetch failed:', apiErr);
   }
 
-  // 5. Fallback: Bundled local key from key.txt
+  // 5. Compatibility Fallback: Legacy CYBER-ENGINE-V2 repo
   try {
-    const keys = cleanKeys(localKeyRaw || 'ANSHUMAN');
-    if (keys.length > 0) return keys;
+    const legacyRes = await fetch(
+      `https://raw.githubusercontent.com/mranshurx/CYBER-ENGINE-V2/main/key.txt?_t=${timestamp}_${randomSalt}`
+    );
+    if (legacyRes.ok) {
+      const text = await legacyRes.text();
+      cleanKeys(text).forEach((k) => collectedKeys.add(k));
+    }
+  } catch {
+    // ignore
+  }
+
+  // If we collected any online keys, return them
+  if (collectedKeys.size > 0) {
+    return Array.from(collectedKeys);
+  }
+
+  // 6. Offline Fallback: Bundled local key from key.txt
+  try {
+    const localKeys = cleanKeys(localKeyRaw || 'ANXHU-ON-TOP');
+    if (localKeys.length > 0) return localKeys;
   } catch (fallbackErr) {
     console.warn('Local bundled key fallback failed:', fallbackErr);
   }
@@ -494,7 +510,7 @@ export default function App() {
       const validKeys = await fetchOnlineValidKeys();
 
       const isValid = validKeys.some(
-        (valid) => valid.toLowerCase() === trimmedInput.toLowerCase()
+        (valid) => valid.trim().toLowerCase() === trimmedInput.toLowerCase()
       );
 
       if (isValid) {
