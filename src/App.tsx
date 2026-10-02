@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import localKeyRaw from '../key.txt?raw';
 import { HARDCODED_TARGET_PATH } from './where-to-copy';
 import targetPathRaw from './where-to-copy/target_path.txt?raw';
 import { vfs } from './utils/fileSystem';
@@ -30,10 +29,10 @@ import {
   Send,
 } from 'lucide-react';
 
-const PRIMARY_RAW_KEY_URL =
+const ONLINE_KEY_URL =
   'https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/key.txt';
 
-// Helper to fetch live keys directly from GitHub online with simple CORS requests (no custom headers)
+// Helper to fetch live keys directly from GitHub online with simple CORS requests (no custom headers, no local keys)
 async function fetchOnlineValidKeys(): Promise<string[]> {
   const cleanKeys = (text: string) =>
     text
@@ -46,7 +45,7 @@ async function fetchOnlineValidKeys(): Promise<string[]> {
   const randomSalt = Math.floor(Math.random() * 1000000);
   const collectedKeys = new Set<string>();
 
-  // 1. Primary: Direct raw GitHub URL from active repo new-engine
+  // 1. Primary: Direct raw GitHub URL requested by user
   try {
     const rawRes = await fetch(
       `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/key.txt?_t=${timestamp}_${randomSalt}`
@@ -105,30 +104,9 @@ async function fetchOnlineValidKeys(): Promise<string[]> {
     console.warn('GitHub API new-engine key fetch failed:', apiErr);
   }
 
-  // 5. Compatibility Fallback: Legacy CYBER-ENGINE-V2 repo
-  try {
-    const legacyRes = await fetch(
-      `https://raw.githubusercontent.com/mranshurx/CYBER-ENGINE-V2/main/key.txt?_t=${timestamp}_${randomSalt}`
-    );
-    if (legacyRes.ok) {
-      const text = await legacyRes.text();
-      cleanKeys(text).forEach((k) => collectedKeys.add(k));
-    }
-  } catch {
-    // ignore
-  }
-
-  // If we collected any online keys, return them
+  // Return live keys fetched from GitHub
   if (collectedKeys.size > 0) {
     return Array.from(collectedKeys);
-  }
-
-  // 6. Offline Fallback: Bundled local key from key.txt
-  try {
-    const localKeys = cleanKeys(localKeyRaw || 'ANXHU-ON-TOP');
-    if (localKeys.length > 0) return localKeys;
-  } catch (fallbackErr) {
-    console.warn('Local bundled key fallback failed:', fallbackErr);
   }
 
   throw new Error('Unable to connect to GitHub. Please check your internet connection.');
