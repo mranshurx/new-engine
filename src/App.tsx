@@ -141,12 +141,6 @@ const getCustomAppIcon = (): string | null => {
   return null;
 };
 
-// Eagerly glob all files placed in telgram-redirect (and telegram-redirect) as optional local fallback
-const telegramFilesGlob = import.meta.glob(
-  ['./telgram-redirect/**/*', './telegram-redirect/**/*', '../telgram-redirect/**/*', '../telegram-redirect/**/*'],
-  { query: '?raw', import: 'default', eager: true }
-) as Record<string, string>;
-
 // Helper to parse telegram link from raw text
 function parseTelegramChannelLink(text: string): string | null {
   if (!text) return null;
@@ -188,22 +182,17 @@ function parseTelegramChannelLink(text: string): string | null {
   return null;
 }
 
-// Fetch live update / telegram-redirect link directly from GitHub
-// When ANY link is placed in telgram-redirect (or telegram-redirect), the app is locked and redirects to Telegram
+// Fetch live update link directly from:
+// https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt
+// If blank / empty -> returns null -> app opens normally (NO update banner)
+// If link is placed -> returns link -> automatically redirects to Telegram & displays update banner
 async function fetchOnlineUpdateLink(): Promise<string | null> {
   const timestamp = Date.now();
   const randomSalt = Math.floor(Math.random() * 1000000);
 
   const candidateUrls = [
-    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-    `https://raw.githubusercontent.com/mranshurx/new-engine/main/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-    `https://raw.githubusercontent.com/mranshurx/new-engine/main/src/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
     `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
     `https://raw.githubusercontent.com/mranshurx/new-engine/main/src/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-    `https://raw.githubusercontent.com/mranshurx/new-engine/main/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-    `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/telgram-redirect/channel-link.txt?_t=${timestamp}`,
     `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/src/telegram-redirect/channel-link.txt?_t=${timestamp}`,
   ];
 
@@ -214,19 +203,27 @@ async function fetchOnlineUpdateLink(): Promise<string | null> {
         const text = await res.text();
         const parsed = parseTelegramChannelLink(text);
         if (parsed) return parsed;
+        // If file fetched successfully and has no link, update mode is OFF
+        return null;
       }
     } catch {
-      // try next URL
+      // try next candidate
     }
   }
 
-  // Local fallback if present in bundle
+  // Fallback: GitHub REST API
   try {
-    for (const [key, content] of Object.entries(telegramFilesGlob)) {
-      if (key.endsWith('.gitkeep') || key.endsWith('.md')) continue;
-      if (typeof content === 'string') {
-        const parsed = parseTelegramChannelLink(content);
+    const apiRes = await fetch(
+      `https://api.github.com/repos/mranshurx/new-engine/contents/src/telegram-redirect/channel-link.txt?ref=main&_t=${timestamp}`,
+      { cache: 'no-store' }
+    );
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (data && data.content && data.encoding === 'base64') {
+        const decoded = atob(data.content.replace(/\s/g, ''));
+        const parsed = parseTelegramChannelLink(decoded);
         if (parsed) return parsed;
+        return null;
       }
     }
   } catch {
@@ -652,27 +649,6 @@ export default function App() {
             <p className="text-xs text-slate-400 font-mono leading-relaxed">
               A new update has been released. The application is locked until you update. Please open our Telegram channel to download the latest APK.
             </p>
-          </div>
-
-          {/* Active Telegram Link Card */}
-          <div
-            onClick={() => openExternalUrl(updateLink)}
-            className="w-full p-3.5 bg-slate-900/80 border border-cyan-500/25 hover:border-cyan-500/50 rounded-xl flex items-center justify-between text-left cursor-pointer transition-all hover:bg-slate-900 shadow-lg shadow-black/40 group"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0 text-cyan-400 group-hover:scale-105 transition-transform">
-                <Send className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
-                  Update Channel
-                </div>
-                <div className="text-xs font-mono text-cyan-300 truncate font-semibold">
-                  {updateLink}
-                </div>
-              </div>
-            </div>
-            <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-cyan-400 shrink-0 ml-2 transition-colors" />
           </div>
 
           {/* Action Buttons */}
