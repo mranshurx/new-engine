@@ -27,6 +27,8 @@ import {
   CheckCircle2,
   Trash2,
   Send,
+  Download,
+  ArrowUpCircle,
 } from 'lucide-react';
 
 const ONLINE_KEY_URL =
@@ -145,12 +147,6 @@ const telegramFilesGlob = import.meta.glob(
   { query: '?raw', import: 'default', eager: true }
 ) as Record<string, string>;
 
-const ONLINE_TELEGRAM_LINK_URL =
-  'https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-link.txt';
-
-const ONLINE_MAINTENANCE_LINK_URL =
-  'https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt';
-
 // Helper to parse telegram link from raw text
 function parseTelegramChannelLink(text: string): string | null {
   if (!text) return null;
@@ -192,57 +188,39 @@ function parseTelegramChannelLink(text: string): string | null {
   return null;
 }
 
-// Fetch online Telegram channel link live from GitHub repo
-async function fetchOnlineTelegramLink(): Promise<string | null> {
+// Fetch live update / telegram-redirect link directly from GitHub
+// When ANY link is placed in telgram-redirect (or telegram-redirect), the app is locked and redirects to Telegram
+async function fetchOnlineUpdateLink(): Promise<string | null> {
   const timestamp = Date.now();
   const randomSalt = Math.floor(Math.random() * 1000000);
 
-  // 1. Direct raw GitHub URL from new-engine repo
-  try {
-    const res = await fetch(
-      `${ONLINE_TELEGRAM_LINK_URL}?_t=${timestamp}_${randomSalt}`,
-      { cache: 'no-store' }
-    );
-    if (res.ok) {
-      const text = await res.text();
-      const parsed = parseTelegramChannelLink(text);
-      if (parsed) return parsed;
+  const candidateUrls = [
+    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    `https://raw.githubusercontent.com/mranshurx/new-engine/main/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    `https://raw.githubusercontent.com/mranshurx/new-engine/main/src/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    `https://raw.githubusercontent.com/mranshurx/new-engine/main/src/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    `https://raw.githubusercontent.com/mranshurx/new-engine/main/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/telgram-redirect/channel-link.txt?_t=${timestamp}`,
+    `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/src/telegram-redirect/channel-link.txt?_t=${timestamp}`,
+  ];
+
+  for (const url of candidateUrls) {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (res.ok) {
+        const text = await res.text();
+        const parsed = parseTelegramChannelLink(text);
+        if (parsed) return parsed;
+      }
+    } catch {
+      // try next URL
     }
-  } catch (err) {
-    console.warn('Primary online telegram link fetch failed:', err);
   }
 
-  // 2. Direct branch raw URL
-  try {
-    const res = await fetch(
-      `https://raw.githubusercontent.com/mranshurx/new-engine/main/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-      { cache: 'no-store' }
-    );
-    if (res.ok) {
-      const text = await res.text();
-      const parsed = parseTelegramChannelLink(text);
-      if (parsed) return parsed;
-    }
-  } catch (err) {
-    console.warn('Secondary online telegram link fetch failed:', err);
-  }
-
-  // 3. Fallback: jsDelivr CDN
-  try {
-    const res = await fetch(
-      `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/telgram-redirect/channel-link.txt?_t=${timestamp}`,
-      { cache: 'no-store' }
-    );
-    if (res.ok) {
-      const text = await res.text();
-      const parsed = parseTelegramChannelLink(text);
-      if (parsed) return parsed;
-    }
-  } catch (err) {
-    console.warn('CDN online telegram link fetch failed:', err);
-  }
-
-  // 4. Bundled local fallback (only if valid non-placeholder link was found)
+  // Local fallback if present in bundle
   try {
     for (const [key, content] of Object.entries(telegramFilesGlob)) {
       if (key.endsWith('.gitkeep') || key.endsWith('.md')) continue;
@@ -258,80 +236,27 @@ async function fetchOnlineTelegramLink(): Promise<string | null> {
   return null;
 }
 
-// Fetch online Maintenance channel link live from GitHub repo
-async function fetchOnlineMaintenanceLink(): Promise<string | null> {
-  const timestamp = Date.now();
-  const randomSalt = Math.floor(Math.random() * 1000000);
-
-  // 1. Direct raw GitHub URL from src/telegram-redirect/channel-link.txt
-  try {
-    const res = await fetch(
-      `${ONLINE_MAINTENANCE_LINK_URL}?_t=${timestamp}_${randomSalt}`,
-      { cache: 'no-store' }
-    );
-    if (res.ok) {
-      const text = await res.text();
-      const parsed = parseTelegramChannelLink(text);
-      if (parsed) return parsed;
-    }
-  } catch (err) {
-    console.warn('Primary maintenance check failed:', err);
-  }
-
-  // 2. Direct branch raw URL
-  try {
-    const res = await fetch(
-      `https://raw.githubusercontent.com/mranshurx/new-engine/main/src/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-      { cache: 'no-store' }
-    );
-    if (res.ok) {
-      const text = await res.text();
-      const parsed = parseTelegramChannelLink(text);
-      if (parsed) return parsed;
-    }
-  } catch (err) {
-    console.warn('Secondary maintenance check failed:', err);
-  }
-
-  // 3. Fallback: jsDelivr CDN
-  try {
-    const res = await fetch(
-      `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/src/telegram-redirect/channel-link.txt?_t=${timestamp}`,
-      { cache: 'no-store' }
-    );
-    if (res.ok) {
-      const text = await res.text();
-      const parsed = parseTelegramChannelLink(text);
-      if (parsed) return parsed;
-    }
-  } catch (err) {
-    console.warn('CDN maintenance check failed:', err);
-  }
-
-  return null;
-}
-
 export default function App() {
   // Custom Icon
   const customAppIcon = getCustomAppIcon();
 
-  // Online Telegram link state
-  const [telegramChannelLink, setTelegramChannelLink] = useState<string | null>(null);
+  // Online Update link state (when present, app is locked in update mode and redirects to Telegram)
+  const [updateLink, setUpdateLink] = useState<string | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState<boolean>(false);
 
-  // Online Maintenance mode state
-  const [maintenanceLink, setMaintenanceLink] = useState<string | null>(null);
-  const [isCheckingMaintenance, setIsCheckingMaintenance] = useState<boolean>(false);
-
-  // Function to re-check maintenance mode
-  const refreshMaintenanceStatus = useCallback(async () => {
-    setIsCheckingMaintenance(true);
+  // Function to re-check update mode
+  const refreshUpdateStatus = useCallback(async () => {
+    setIsCheckingUpdate(true);
     try {
-      const mLink = await fetchOnlineMaintenanceLink();
-      setMaintenanceLink(mLink);
+      const link = await fetchOnlineUpdateLink();
+      setUpdateLink(link);
+      if (link) {
+        openExternalUrl(link);
+      }
     } catch {
       // Ignore
     } finally {
-      setIsCheckingMaintenance(false);
+      setIsCheckingUpdate(false);
     }
   }, []);
 
@@ -348,45 +273,33 @@ export default function App() {
     }
   }, [customAppIcon]);
 
-  // Online service checks: checks maintenance mode and first-time telegram redirect
+  // Check update mode on mount and periodically: if any link is present, directly redirect to Telegram
   useEffect(() => {
     let isMounted = true;
 
-    async function checkOnlineServices() {
-      // 1. Check Maintenance mode first
-      const mLink = await fetchOnlineMaintenanceLink();
+    async function checkUpdateOnLaunch() {
+      const link = await fetchOnlineUpdateLink();
       if (!isMounted) return;
-      setMaintenanceLink(mLink);
-
-      // 2. Check general Telegram redirect
-      const onlineLink = await fetchOnlineTelegramLink();
-      if (!isMounted) return;
-
-      if (onlineLink) {
-        setTelegramChannelLink(onlineLink);
-
-        const REDIRECTED_URL_KEY = 'cyber_engine_last_redirected_url';
-        const lastRedirectedUrl = localStorage.getItem(REDIRECTED_URL_KEY);
-
-        // Redirect on first launch for this channel link when not in maintenance
-        if (lastRedirectedUrl !== onlineLink && !mLink) {
-          localStorage.setItem(REDIRECTED_URL_KEY, onlineLink);
-          // Directly open Telegram immediately without failing
-          openExternalUrl(onlineLink);
-        }
-      } else {
-        setTelegramChannelLink(null);
+      setUpdateLink(link);
+      if (link) {
+        // Directly open the Telegram link placed in telgram-redirect immediately
+        openExternalUrl(link);
       }
     }
 
-    checkOnlineServices();
+    checkUpdateOnLaunch();
 
-    // Re-check maintenance status periodically every 30 seconds
-    const interval = setInterval(() => {
-      fetchOnlineMaintenanceLink().then((mLink) => {
-        if (isMounted) setMaintenanceLink(mLink);
+    // Re-check update status periodically every 15 seconds
+    const interval = setInterval(async () => {
+      const link = await fetchOnlineUpdateLink();
+      if (!isMounted) return;
+      setUpdateLink((prev) => {
+        if (link && !prev) {
+          openExternalUrl(link);
+        }
+        return link;
       });
-    }, 30000);
+    }, 15000);
 
     return () => {
       isMounted = false;
@@ -693,53 +606,99 @@ export default function App() {
     }
   };
 
-  // MAINTENANCE SCREEN: Triggered when any link is put in src/telegram-redirect/channel-link.txt
-  if (maintenanceLink) {
+  // UPDATE BANNER / SCREEN: Triggered when any link is placed in telgram-redirect
+  // The app is strictly blocked from opening and redirects directly to Telegram for update.
+  if (updateLink) {
     return (
-      <div className="min-h-screen bg-[#06090e] text-slate-100 flex flex-col items-center justify-center p-5 selection:bg-rose-500/20">
-        <div className="w-full max-w-sm flex flex-col items-center text-center gap-6">
-          {/* Logo / Warning Badge */}
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-rose-600 via-amber-500 to-orange-400 p-[1.5px] shadow-2xl shadow-rose-950/60 flex items-center justify-center">
-            <div className="w-full h-full bg-slate-950 rounded-[15px] flex items-center justify-center text-amber-400">
-              <AlertCircle className="w-8 h-8 text-amber-400 animate-pulse" />
+      <div className="min-h-screen bg-[#06090e] text-slate-100 flex flex-col items-center justify-center p-5 selection:bg-cyan-500/20 relative overflow-hidden">
+        {/* Subtle Cyber Grid Background */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a15_1px,transparent_1px),linear-gradient(to_bottom,#0f172a15_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+
+        {/* Glowing Ambient Orbs */}
+        <div className="absolute top-1/4 -left-20 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 -right-20 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="w-full max-w-sm flex flex-col items-center text-center gap-6 relative z-10">
+          {/* Logo / Update Badge */}
+          <div className="relative">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-cyan-500 via-sky-400 to-emerald-400 p-[2px] shadow-2xl shadow-cyan-950/80 flex items-center justify-center">
+              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center overflow-hidden">
+                {customAppIcon ? (
+                  <img
+                    src={customAppIcon}
+                    alt="Cyber Engine"
+                    className="w-14 h-14 object-contain rounded-xl"
+                  />
+                ) : (
+                  <ArrowUpCircle className="w-10 h-10 text-cyan-400 animate-pulse" />
+                )}
+              </div>
             </div>
+            {/* Pulsing indicator tag */}
+            <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-cyan-400 rounded-full animate-ping opacity-75" />
+            <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-cyan-400 rounded-full" />
           </div>
 
           <div className="flex flex-col gap-2.5">
-            <span className="text-[10px] font-mono tracking-widest text-amber-400 bg-amber-950/50 border border-amber-500/30 px-3 py-1 rounded-full uppercase font-bold self-center">
-              SYSTEM MAINTENANCE
-            </span>
-            <h1 className="font-['Cabinet_Grotesk'] text-xl font-black tracking-tight text-white uppercase leading-snug">
-              PROXY UNDER MAINTAINACE CHECK TELEGRAM FOR UPDATE
+            <div className="inline-flex items-center gap-1.5 self-center text-[10px] font-mono tracking-widest text-cyan-300 bg-cyan-950/70 border border-cyan-500/40 px-3.5 py-1 rounded-full uppercase font-bold shadow-sm">
+              <Download className="w-3.5 h-3.5 text-cyan-400 animate-bounce" />
+              <span>UPDATE REQUIRED</span>
+            </div>
+
+            <h1 className="font-['Cabinet_Grotesk'] text-2xl font-black tracking-tight text-white uppercase leading-snug">
+              NEW UPDATE AVAILABLE
             </h1>
-            <p className="text-xs text-slate-400 font-mono">
-              The service is currently undergoing routine maintenance. Please visit our official Telegram channel for status updates and announcements.
+
+            <p className="text-xs text-slate-400 font-mono leading-relaxed">
+              A new update has been released. The application is locked until you update. Please open our Telegram channel to download the latest APK.
             </p>
+          </div>
+
+          {/* Active Telegram Link Card */}
+          <div
+            onClick={() => openExternalUrl(updateLink)}
+            className="w-full p-3.5 bg-slate-900/80 border border-cyan-500/25 hover:border-cyan-500/50 rounded-xl flex items-center justify-between text-left cursor-pointer transition-all hover:bg-slate-900 shadow-lg shadow-black/40 group"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0 text-cyan-400 group-hover:scale-105 transition-transform">
+                <Send className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+                  Update Channel
+                </div>
+                <div className="text-xs font-mono text-cyan-300 truncate font-semibold">
+                  {updateLink}
+                </div>
+              </div>
+            </div>
+            <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-cyan-400 shrink-0 ml-2 transition-colors" />
           </div>
 
           {/* Action Buttons */}
           <div className="w-full flex flex-col gap-3">
             <button
-              onClick={() => openExternalUrl(maintenanceLink)}
-              className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-slate-950 font-['Cabinet_Grotesk'] font-bold rounded-xl shadow-lg shadow-amber-950/50 hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
+              onClick={() => openExternalUrl(updateLink)}
+              className="w-full py-3.5 px-4 bg-gradient-to-r from-cyan-500 via-sky-500 to-emerald-400 text-slate-950 font-['Cabinet_Grotesk'] font-bold rounded-xl shadow-lg shadow-cyan-950/60 hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider cursor-pointer"
             >
               <Send className="w-4 h-4 text-slate-950" />
-              <span>Open Telegram Channel</span>
+              <span>DIRECT TO TELEGRAM FOR UPDATE</span>
               <ExternalLink className="w-3.5 h-3.5 text-slate-950/80" />
             </button>
 
             <button
-              onClick={() => refreshMaintenanceStatus()}
-              disabled={isCheckingMaintenance}
-              className="w-full py-2.5 px-3 bg-slate-900 border border-slate-800 text-slate-300 font-mono text-xs rounded-xl hover:text-white hover:border-slate-700 transition-colors flex items-center justify-center gap-2"
+              onClick={() => refreshUpdateStatus()}
+              disabled={isCheckingUpdate}
+              className="w-full py-2.5 px-3 bg-slate-900/90 border border-slate-800 text-slate-300 font-mono text-xs rounded-xl hover:text-white hover:border-slate-700 transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingMaintenance ? 'animate-spin text-amber-400' : ''}`} />
-              <span>{isCheckingMaintenance ? 'Checking status...' : 'Check Again'}</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdate ? 'animate-spin text-cyan-400' : ''}`} />
+              <span>{isCheckingUpdate ? 'Checking update status...' : 'Check Again'}</span>
             </button>
           </div>
 
-          <div className="text-[10px] font-mono text-slate-500">
-            CYBER-ENGINE CLOUD SAFEGUARD
+          <div className="text-[10px] font-mono text-slate-600 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>CYBER-ENGINE CLOUD ENFORCEMENT</span>
           </div>
         </div>
       </div>
@@ -880,16 +839,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            {telegramChannelLink && (
-              <button
-                onClick={() => openExternalUrl(telegramChannelLink)}
-                title="Open Telegram Channel"
-                className="p-2 text-slate-400 hover:text-cyan-400 bg-slate-900 border border-slate-800 rounded-lg transition-colors flex items-center text-xs"
-              >
-                <Send className="w-3.5 h-3.5 text-cyan-400" />
-              </button>
-            )}
-
             <button
               onClick={() => refreshShizuku()}
               disabled={isRefreshingShizuku}
