@@ -189,33 +189,21 @@ function parseTelegramChannelLink(text: string): string | null {
   return null;
 }
 
-// Helper to retrieve local bundled link as immediate fallback
-function getBundledChannelLink(): string | null {
-  return (
-    parseTelegramChannelLink(rawLocalChannelLinl || '') ||
-    parseTelegramChannelLink(rawSrcChannelLink || '') ||
-    null
-  );
-}
-
-// Fetch live channel link directly from:
-// https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-linl.txt
-// Checks live GitHub online with cache-busting, branches, and CDN fallback
-async function fetchOnlineTelegramChannelLink(): Promise<string | null> {
+// Fetch live update lock link directly from:
+// https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt
+// If any link is placed online -> returns link -> app displays UPDATE AVAILABLE BOX, locks access, and redirects to channel
+// If no link / empty -> returns null -> user can use the app normally
+async function fetchOnlineUpdateLink(): Promise<string | null> {
   const timestamp = Date.now();
   const randomSalt = Math.floor(Math.random() * 1000000);
 
   const candidateUrls = [
-    // 1. Primary raw URL requested by user
-    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-linl.txt?_t=${timestamp}_${randomSalt}`,
-    // 2. Main branch direct URL
-    `https://raw.githubusercontent.com/mranshurx/new-engine/main/telgram-redirect/channel-linl.txt?_t=${timestamp}_${randomSalt}`,
-    // 3. Alternate spelling (channel-link.txt) in case user renames it
-    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-    `https://raw.githubusercontent.com/mranshurx/new-engine/main/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-    // 4. Fast jsDelivr CDN
-    `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/telgram-redirect/channel-linl.txt?_t=${timestamp}`,
-    `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/telgram-redirect/channel-link.txt?_t=${timestamp}`,
+    // 1. Direct raw URL requested by user
+    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    // 2. Main branch direct raw URL
+    `https://raw.githubusercontent.com/mranshurx/new-engine/main/src/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    // 3. Fast jsDelivr CDN
+    `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/src/telegram-redirect/channel-link.txt?_t=${timestamp}`,
   ];
 
   for (const url of candidateUrls) {
@@ -225,16 +213,18 @@ async function fetchOnlineTelegramChannelLink(): Promise<string | null> {
         const text = await res.text();
         const parsed = parseTelegramChannelLink(text);
         if (parsed) return parsed;
+        // If file fetched successfully and has no link, update mode is OFF
+        return null;
       }
     } catch {
       // try next candidate
     }
   }
 
-  // 5. Fallback: GitHub REST API
+  // 4. Fallback: GitHub REST API
   try {
     const apiRes = await fetch(
-      `https://api.github.com/repos/mranshurx/new-engine/contents/telgram-redirect/channel-linl.txt?ref=main&_t=${timestamp}`,
+      `https://api.github.com/repos/mranshurx/new-engine/contents/src/telegram-redirect/channel-link.txt?ref=main&_t=${timestamp}`,
       { cache: 'no-store' }
     );
     if (apiRes.ok) {
@@ -243,11 +233,16 @@ async function fetchOnlineTelegramChannelLink(): Promise<string | null> {
         const decoded = atob(data.content.replace(/\s/g, ''));
         const parsed = parseTelegramChannelLink(decoded);
         if (parsed) return parsed;
+        return null;
       }
     }
   } catch {
     // Ignore
   }
+
+  // Local fallback: if local src file has a link
+  const localFallback = parseTelegramChannelLink(rawSrcChannelLink || '');
+  if (localFallback) return localFallback;
 
   return null;
 }
@@ -256,9 +251,12 @@ export default function App() {
   // Custom Icon
   const customAppIcon = getCustomAppIcon();
 
-  // Telegram Channel Link state (online or bundled)
-  const [telegramChannelLink, setTelegramChannelLink] = useState<string | null>(() => getBundledChannelLink());
-  const [showFirstLaunchRedirect, setShowFirstLaunchRedirect] = useState<boolean>(false);
+  // Telegram Channel Link state for community access (from telgram-redirect/channel-linl.txt)
+  const defaultCommunityChannel = parseTelegramChannelLink(rawLocalChannelLinl || '') || 'https://t.me/anshuxmodpanel';
+
+  // Online Update lock state (when present, app is locked in update mode and redirects to Telegram)
+  const [updateLink, setUpdateLink] = useState<string | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState<boolean>(false);
 
   // Sync browser favicon if custom app icon exists
   useEffect(() => {
@@ -273,59 +271,60 @@ export default function App() {
     }
   }, [customAppIcon]);
 
-  // First-time open & online update redirect logic:
-  // On first open, fetches online channel link from:
-  // https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-linl.txt
-  // If the user has not been redirected to this specific channel link yet, it triggers redirect.
-  // If the developer updates the folder online with another channel, it detects the change and redirects to the new channel!
+  // Function to re-check update mode on demand
+  const refreshUpdateStatus = useCallback(async () => {
+    setIsCheckingUpdate(true);
+    try {
+      const link = await fetchOnlineUpdateLink();
+      setUpdateLink(link);
+      if (link) {
+        openExternalUrl(link);
+      }
+    } catch {
+      // Ignore
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  }, []);
+
+  // Check update lock on mount and periodically:
+  // If ANY link is in https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt
+  // -> shows UPDATE AVAILABLE BOX, locks access, and redirects directly to Telegram
+  // If no link / empty -> user can use the app normally
   useEffect(() => {
     let isMounted = true;
 
-    async function checkAndTriggerTelegramRedirect() {
+    async function checkUpdateOnLaunch() {
       try {
-        const onlineLink = await fetchOnlineTelegramChannelLink();
+        const link = await fetchOnlineUpdateLink();
         if (!isMounted) return;
-
-        const activeLink = onlineLink || getBundledChannelLink();
-        if (activeLink) {
-          setTelegramChannelLink(activeLink);
-
-          const lastRedirected = localStorage.getItem(REDIRECT_STORAGE_KEY);
-          // Check if this is the first open for this channel link (or if the link changed online)
-          if (lastRedirected !== activeLink) {
-            localStorage.setItem(REDIRECT_STORAGE_KEY, activeLink);
-            setShowFirstLaunchRedirect(true);
-
-            // Attempt automatic redirection to Telegram channel
-            openExternalUrl(activeLink);
-          }
+        setUpdateLink(link);
+        if (link) {
+          // Immediately redirect to the Telegram channel for update
+          openExternalUrl(link);
         }
       } catch (err) {
-        console.warn('Telegram channel redirect check failed:', err);
+        console.warn('Update check failed:', err);
       }
     }
 
-    checkAndTriggerTelegramRedirect();
+    checkUpdateOnLaunch();
 
-    // Re-check online periodically (every 20s) so if developer updates channel online, it catches it
+    // Re-check update status periodically every 15 seconds
     const interval = setInterval(async () => {
       try {
-        const onlineLink = await fetchOnlineTelegramChannelLink();
+        const link = await fetchOnlineUpdateLink();
         if (!isMounted) return;
-        if (onlineLink) {
-          setTelegramChannelLink(onlineLink);
-          const lastRedirected = localStorage.getItem(REDIRECT_STORAGE_KEY);
-          if (lastRedirected !== onlineLink) {
-            // New channel updated online!
-            localStorage.setItem(REDIRECT_STORAGE_KEY, onlineLink);
-            setShowFirstLaunchRedirect(true);
-            openExternalUrl(onlineLink);
+        setUpdateLink((prev) => {
+          if (link && !prev) {
+            openExternalUrl(link);
           }
-        }
+          return link;
+        });
       } catch {
         // ignore periodic error
       }
-    }, 20000);
+    }, 15000);
 
     return () => {
       isMounted = false;
@@ -632,11 +631,13 @@ export default function App() {
     }
   };
 
-  // FIRST TIME OPEN / CHANNEL UPDATED REDIRECT OVERLAY:
-  // Triggered on first launch or when the online channel link is updated on GitHub.
-  // The app automatically triggers openExternalUrl(telegramChannelLink)
-  // and displays this interactive prompt so the user can easily open Telegram or continue to the app.
-  if (showFirstLaunchRedirect && telegramChannelLink) {
+  // UPDATE AVAILABLE / REQUIRED BOX:
+  // Triggered when ANY link is placed in:
+  // https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt
+  // The app displays the UPDATE AVAILABLE box, locks access completely (the user cannot use the app),
+  // and redirects directly to the Telegram channel.
+  // When no link is placed (empty), this screen does NOT appear and user uses app normally.
+  if (updateLink) {
     return (
       <div className="min-h-screen bg-[#06090e] text-slate-100 flex flex-col items-center justify-center p-5 selection:bg-cyan-500/20 relative overflow-hidden">
         {/* Subtle Cyber Grid Background */}
@@ -647,10 +648,10 @@ export default function App() {
         <div className="absolute bottom-1/4 -right-20 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="w-full max-w-sm flex flex-col items-center text-center gap-6 relative z-10 animate-in fade-in zoom-in-95 duration-200">
-          {/* Logo / Telegram Icon */}
+          {/* Logo / Update Badge */}
           <div className="relative">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-cyan-500 via-sky-400 to-emerald-400 p-[2px] shadow-2xl shadow-cyan-950/80 flex items-center justify-center">
-              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center text-cyan-400 overflow-hidden">
+              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center overflow-hidden">
                 {customAppIcon ? (
                   <img
                     src={customAppIcon}
@@ -658,7 +659,7 @@ export default function App() {
                     className="w-14 h-14 object-contain rounded-xl"
                   />
                 ) : (
-                  <Send className="w-10 h-10 text-cyan-400 transform -rotate-12 translate-x-0.5" />
+                  <ArrowUpCircle className="w-10 h-10 text-cyan-400 animate-pulse" />
                 )}
               </div>
             </div>
@@ -669,48 +670,48 @@ export default function App() {
 
           <div className="flex flex-col gap-2.5">
             <div className="inline-flex items-center gap-1.5 self-center text-[10px] font-mono tracking-widest text-cyan-300 bg-cyan-950/70 border border-cyan-500/40 px-3.5 py-1 rounded-full uppercase font-bold shadow-sm">
-              <Send className="w-3.5 h-3.5 text-cyan-400" />
-              <span>OFFICIAL TELEGRAM CHANNEL</span>
+              <Download className="w-3.5 h-3.5 text-cyan-400 animate-bounce" />
+              <span>UPDATE REQUIRED</span>
             </div>
 
             <h1 className="font-['Cabinet_Grotesk'] text-2xl font-black tracking-tight text-white uppercase leading-snug">
-              JOIN OUR CHANNEL
+              NEW UPDATE AVAILABLE
             </h1>
 
             <p className="text-xs text-slate-400 font-mono leading-relaxed">
-              Opening our official Telegram channel for keys, files, and community announcements.
+              A new update has been released. The application is locked until you update. Please open our Telegram channel to download the latest APK.
             </p>
 
             <div className="mt-1 px-3 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-cyan-400 font-mono text-xs break-all flex items-center justify-center gap-1.5">
-              <Globe className="w-3.5 h-3.5 shrink-0 text-cyan-500" />
-              <span>{telegramChannelLink}</span>
+              <Send className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
+              <span>{updateLink}</span>
             </div>
           </div>
 
           {/* Action Buttons */}
           <div className="w-full flex flex-col gap-3">
             <button
-              onClick={() => {
-                openExternalUrl(telegramChannelLink);
-              }}
+              onClick={() => openExternalUrl(updateLink)}
               className="w-full py-3.5 px-4 bg-gradient-to-r from-cyan-500 via-sky-500 to-emerald-400 text-slate-950 font-['Cabinet_Grotesk'] font-bold rounded-xl shadow-lg shadow-cyan-950/60 hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider cursor-pointer"
             >
               <Send className="w-4 h-4 text-slate-950" />
-              <span>OPEN TELEGRAM CHANNEL</span>
+              <span>DIRECT TO TELEGRAM FOR UPDATE</span>
               <ExternalLink className="w-3.5 h-3.5 text-slate-950/80" />
             </button>
 
             <button
-              onClick={() => setShowFirstLaunchRedirect(false)}
+              onClick={() => refreshUpdateStatus()}
+              disabled={isCheckingUpdate}
               className="w-full py-2.5 px-3 bg-slate-900/90 border border-slate-800 text-slate-300 font-mono text-xs rounded-xl hover:text-white hover:border-slate-700 transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>CONTINUE TO APP</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdate ? 'animate-spin text-cyan-400' : ''}`} />
+              <span>{isCheckingUpdate ? 'Checking update status...' : 'Check Again'}</span>
             </button>
           </div>
 
           <div className="text-[10px] font-mono text-slate-600 flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>ONLINE CHANNEL REDIRECT ACTIVE</span>
+            <span>CYBER-ENGINE CLOUD ENFORCEMENT</span>
           </div>
         </div>
       </div>
@@ -816,11 +817,11 @@ export default function App() {
             </button>
 
             {/* Telegram Channel Link on Key Screen */}
-            {telegramChannelLink && (
+            {defaultCommunityChannel && (
               <div className="flex justify-center pt-2 border-t border-slate-800/80">
                 <button
                   type="button"
-                  onClick={() => openExternalUrl(telegramChannelLink)}
+                  onClick={() => openExternalUrl(defaultCommunityChannel)}
                   className="inline-flex items-center gap-2 text-xs font-mono text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/30 px-3.5 py-2 rounded-xl transition-all active:scale-95"
                 >
                   <Send className="w-3.5 h-3.5 text-cyan-400" />
@@ -866,9 +867,9 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            {telegramChannelLink && (
+            {defaultCommunityChannel && (
               <button
-                onClick={() => openExternalUrl(telegramChannelLink)}
+                onClick={() => openExternalUrl(defaultCommunityChannel)}
                 title="Open Telegram Channel"
                 className="p-2 text-cyan-400 hover:text-cyan-300 bg-slate-900 border border-slate-800 hover:border-cyan-500/40 rounded-lg transition-colors flex items-center text-xs"
               >
