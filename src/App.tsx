@@ -189,20 +189,71 @@ function parseTelegramChannelLink(text: string): string | null {
   return null;
 }
 
-// Fetch live update lock link directly from:
+// 1. FIRST-TIME LAUNCH REDIRECT:
+// Checks online from:
+// https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-linl.txt
+// Redirects to that channel ONCE when the app is first launched (or when the channel is updated online)
+const FIRST_LAUNCH_REDIRECT_KEY = 'cyber_engine_first_launch_redirect';
+
+async function fetchOnlineFirstLaunchChannelLink(): Promise<string | null> {
+  const timestamp = Date.now();
+  const randomSalt = Math.floor(Math.random() * 1000000);
+
+  const candidateUrls = [
+    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-linl.txt?_t=${timestamp}_${randomSalt}`,
+    `https://raw.githubusercontent.com/mranshurx/new-engine/main/telgram-redirect/channel-linl.txt?_t=${timestamp}_${randomSalt}`,
+    `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
+    `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/telgram-redirect/channel-linl.txt?_t=${timestamp}`,
+  ];
+
+  for (const url of candidateUrls) {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (res.ok) {
+        const text = await res.text();
+        const parsed = parseTelegramChannelLink(text);
+        if (parsed) return parsed;
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+
+  try {
+    const apiRes = await fetch(
+      `https://api.github.com/repos/mranshurx/new-engine/contents/telgram-redirect/channel-linl.txt?ref=main&_t=${timestamp}`,
+      { cache: 'no-store' }
+    );
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (data && data.content && data.encoding === 'base64') {
+        const decoded = atob(data.content.replace(/\s/g, ''));
+        const parsed = parseTelegramChannelLink(decoded);
+        if (parsed) return parsed;
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
+  const localFallback = parseTelegramChannelLink(rawLocalChannelLinl || '');
+  if (localFallback) return localFallback;
+
+  return null;
+}
+
+// 2. UPDATE LOCK:
+// Checks online from:
 // https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt
-// If any link is placed online -> returns link -> app displays UPDATE AVAILABLE BOX, locks access, and redirects to channel
-// If no link / empty -> returns null -> user can use the app normally
+// If ANY link is in this file -> shows UPDATE AVAILABLE BOX, completely locks the app, and redirects to Telegram
+// If no link / empty -> user can use the app normally
 async function fetchOnlineUpdateLink(): Promise<string | null> {
   const timestamp = Date.now();
   const randomSalt = Math.floor(Math.random() * 1000000);
 
   const candidateUrls = [
-    // 1. Direct raw URL requested by user
     `https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-    // 2. Main branch direct raw URL
     `https://raw.githubusercontent.com/mranshurx/new-engine/main/src/telegram-redirect/channel-link.txt?_t=${timestamp}_${randomSalt}`,
-    // 3. Fast jsDelivr CDN
     `https://cdn.jsdelivr.net/gh/mranshurx/new-engine@main/src/telegram-redirect/channel-link.txt?_t=${timestamp}`,
   ];
 
@@ -221,7 +272,6 @@ async function fetchOnlineUpdateLink(): Promise<string | null> {
     }
   }
 
-  // 4. Fallback: GitHub REST API
   try {
     const apiRes = await fetch(
       `https://api.github.com/repos/mranshurx/new-engine/contents/src/telegram-redirect/channel-link.txt?ref=main&_t=${timestamp}`,
@@ -240,7 +290,6 @@ async function fetchOnlineUpdateLink(): Promise<string | null> {
     // Ignore
   }
 
-  // Local fallback: if local src file has a link
   const localFallback = parseTelegramChannelLink(rawSrcChannelLink || '');
   if (localFallback) return localFallback;
 
@@ -271,6 +320,34 @@ export default function App() {
     }
   }, [customAppIcon]);
 
+  // Hook 1: First-time launch redirect from telgram-redirect/channel-linl.txt
+  // Checks online: https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/telgram-redirect/channel-linl.txt
+  // Redirects to that channel ONCE on first app launch (or when updated online)
+  useEffect(() => {
+    let isMounted = true;
+
+    async function handleFirstLaunchRedirect() {
+      try {
+        const channelLink = await fetchOnlineFirstLaunchChannelLink();
+        if (!isMounted || !channelLink) return;
+
+        const lastRedirected = localStorage.getItem(FIRST_LAUNCH_REDIRECT_KEY);
+        if (lastRedirected !== channelLink) {
+          localStorage.setItem(FIRST_LAUNCH_REDIRECT_KEY, channelLink);
+          openExternalUrl(channelLink);
+        }
+      } catch (e) {
+        console.warn('First launch channel redirect error:', e);
+      }
+    }
+
+    handleFirstLaunchRedirect();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Function to re-check update mode on demand
   const refreshUpdateStatus = useCallback(async () => {
     setIsCheckingUpdate(true);
@@ -287,7 +364,7 @@ export default function App() {
     }
   }, []);
 
-  // Check update lock on mount and periodically:
+  // Hook 2: Online Update lock check from src/telegram-redirect/channel-link.txt
   // If ANY link is in https://raw.githubusercontent.com/mranshurx/new-engine/refs/heads/main/src/telegram-redirect/channel-link.txt
   // -> shows UPDATE AVAILABLE BOX, locks access, and redirects directly to Telegram
   // If no link / empty -> user can use the app normally
