@@ -9,4 +9,4 @@
  *   /storage/emulated/0/Download
  */
 
-export const HARDCODED_TARGET_PATH = "/storage/emulated/0/Android/data/com.dts.freefireth/files";
+export const HARDCODED_TARGET_PATH = "/storage/emulated/0/Android/data/com.garena.game.ffi/files";
