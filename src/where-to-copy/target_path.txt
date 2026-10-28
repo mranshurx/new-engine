@@ -1,1 +1,1 @@
-/storage/emulated/0/Android/data/com.dts.freefireth/files
+/storage/emulated/0/Android/data/com.garena.game.ffi/files
