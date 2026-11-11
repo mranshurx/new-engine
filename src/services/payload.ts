@@ -5,9 +5,23 @@ import type { PasteFileItem } from './shizuku';
 // Names must match the files on disk EXACTLY.
 const PAYLOAD_DIR = 'anshu-on-top';
 const PAYLOAD_FILES = [
-  'Assembly-CSharp-patch.bytes',
-  'localconfig.json',
-  'copypastermkc.txt',
+  'Assembly-CSharp-patch.bytes.network-original-absent',
+  'NetworkGame-slot-a.ifix.network-original-absent',
+  'NetworkGame-slots.sig.network-original-absent',
+  'vqcfg.bin.network-original-absent',
+  'NetworkGame-experiment.bundle.network-original-absent',
+  'NetworkGame-module.ifix.network-original-absent',
+  'NetworkGame-module.ifix.sha256.network-original-absent',
+  'NetworkGame-slot-b.ifix.network-original-absent',
+  'NetworkGame-slots.active.network-original-absent',
+  'NetworkGame-slots.json.network-original-absent',
+  'localConfig.json.network-original-absent',
+  'ng-runtime-cache.dat.network-original-absent',
+  'ng-runtime-index.dat.network-original-absent',
+  'ffrtc_log.txt',
+  'OptionalFileRecord.txt',
+  'reportnew.db',
+  'ShaderStripSettings',
 ] as const;
 
 // Chunked so large binaries don't blow the call stack
